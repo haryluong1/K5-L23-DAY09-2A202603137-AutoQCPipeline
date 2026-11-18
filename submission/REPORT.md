@@ -1,6 +1,6 @@
-# Báo cáo Day 09 — <Họ và tên>, <MSHV>
+# Báo cáo Day 09 — Lê Đức Lương, 2A202603137
 
-> Xoá mọi `TODO(học viên)` và dòng gợi ý. Mỗi ý trả lời bằng **số lấy từ `submission/reports/`**, kèm mẫu số. Cả báo cáo ~1–2 trang.
+Báo cáo kết quả QC tự động trên lô 224 ảnh. Số liệu đối chiếu từ `submission/reports/`.
 
 ## 1. Kết luận trước
 **Kết luận: HOLD** (mã thoát 10): chưa được phát hành.
@@ -45,7 +45,7 @@ Máy tự sửa 29 thay đổi ở `03_fixes.csv`: 20 `drop_line`, 8 `clip_box`,
 
 Số liệu lấy từ `submission/calibration/calibration_report.md`. `POSSIBLE_LOOSE_BOX` rất kém ở mọi mức conf (P ≤ 0.50, R ≤ 0.60) và `POSSIBLE_FALSE_POS` không phụ thuộc `conf` (P 0.31 / R 1.00, dùng `fp_conf` cố định), nên hai loại này không điều chỉnh được bằng ngưỡng đang calibrate.
 
-**Chỗ calibration có thể đánh lừa:** `DUP_IMAGE_NEAR` trong calib chỉ có 6 lỗi chèn nên mỗi ảnh làm recall nhảy 0.17, và bảng cho thấy F1 cao nhất ở `phash_dist=16` (0.91) nhưng ngay sau đó ở 20 recall `DUP_IMAGE_EXACT` sập còn 0.33 — tối ưu theo F1 sẽ chọn đúng sát mép vách. Trên lô raw (`01_intake.csv`, `phash_dist=8`), pipeline loại 21/224 ảnh: 8 `DUP_IMAGE_EXACT`, 5 `LEAK_TEST`, 3 `BAD_SIZE`, 3 `DUP_IMAGE_NEAR`, 2 `CORRUPT_IMAGE`. Trong 3 ảnh `DUP_IMAGE_NEAR`, chỉ `img_0223` (so với `img_0077`, phash 6) cần ngưỡng > 2; hai ảnh còn lại phash 0. Nghĩa là phần lợi của ngưỡng cao hơn trên raw chỉ dựa vào **1 ảnh**, và cần mở xem cặp `img_0223`/`img_0077` để chắc đó là trùng thật chứ không phải hai ảnh khác nhau trông giống nhau. Ngoài ra calib không có ca `LEAK_TEST` còn raw có 5 ca, nên recall của calib không phản ánh lô raw.
+**Chỗ calibration có thể đánh lừa:** `DUP_IMAGE_NEAR` trong calib chỉ có 6 lỗi chèn nên mỗi ảnh làm recall nhảy 0.17, và bảng cho thấy F1 cao nhất ở `phash_dist=16` (0.91) nhưng ngay sau đó ở 20 recall `DUP_IMAGE_EXACT` sập còn 0.33 — tối ưu theo F1 sẽ chọn đúng sát mép vách. Trên lô raw (`01_intake.csv`, `phash_dist=8`), pipeline loại 21/224 ảnh: 8 `DUP_IMAGE_EXACT`, 5 `LEAK_TEST`, 3 `BAD_SIZE`, 3 `DUP_IMAGE_NEAR`, 2 `CORRUPT_IMAGE`. Trong 3 ảnh `DUP_IMAGE_NEAR`, chỉ `img_0223` (so với `img_0077`, phash 6) cần ngưỡng > 2; hai ảnh còn lại phash 0. Nghĩa là phần lợi của ngưỡng cao hơn trên raw chỉ dựa vào **1 ảnh**. Tôi đã mở xem cặp `img_0223`/`img_0077`: hai ảnh **giống hệt nhau về nội dung**, chỉ khác độ nét (`img_0077` nét hơn, `img_0223` mờ hơn), tức là trùng thật nên việc loại `img_0223` là đúng và không phải xoá nhầm. Tuy nhiên đây mới là 1 trường hợp, chưa đủ để kết luận `phash_dist=8` an toàn trên toàn bộ dữ liệu: `phash_dist=2` sẽ bỏ sót đúng ca này (một bản sao mờ), còn ngưỡng cao hơn thì phải kiểm thêm xem có cặp ảnh khác nhau bị coi là trùng hay không. Ngoài ra calib không có ca `LEAK_TEST` còn raw có 5 ca, nên recall của calib không phản ánh lô raw.
 
 ## 4. Cửa chặn và điều pipeline KHÔNG bắt được
 **3 lỗi tự nhìn thấy khi xem `work/viz/` (bằng mắt, trước khi chạy pipeline):**
@@ -64,11 +64,16 @@ Số liệu lấy từ `submission/calibration/calibration_report.md`. `POSSIBLE
 4. **Ảnh `EMPTY_LABEL`:** file nhãn rỗng được báo là cảnh báo (12 ảnh), nhưng máy không phân biệt được ảnh nền hợp lệ với ảnh bị thiếu nhãn.
 
 ## 5. Train: raw vs clean (tùy chọn, chấm riêng)
-Chưa train: ghi "chưa chạy" và lý do, rồi bỏ qua phần còn lại của mục này. Nếu đã train: dán bảng từ `submission/results/comparison.md` (model, epoch, seed, số ảnh train mỗi biến thể).
-
-TODO(học viên): chênh mAP50 (clean − raw) so với **độ lệch chuẩn giữa các seed**; kết luận **trung thực** (nằm trong nhiễu thì nói là chưa kết luận được); ≥ 2 giả thuyết giải thích (ảnh trùng/rò rỉ test trong `raw`, nhãn máy còn lại trong `clean`, test chỉ 100 ảnh…) và cách kiểm.
+Chưa chạy: Tập trung hoàn thiện phần lõi pipeline QC (4 module, calibration 2 ngưỡng, cổng gate kiểm soát chất lượng) trên môi trường cục bộ và kiểm tra tính tái lập. Sẽ chạy thí nghiệm so sánh đối đầu trên Google Colab theo [docs/COLAB.md](docs/COLAB.md) ở giai đoạn mở rộng nếu cần lấy thêm 15 điểm của phần train.
 
 ## 6. Quyết định và ghi chú AI
-TODO(học viên): (a) quyết định cuối; nếu Hold/Rework cần làm gì để thành Release? (b) Dùng AI viết code? Ghi 3 dòng: prompt chính, cách bạn kiểm code AI, 1 lần AI sai. Không dùng: ghi "không dùng".
+**(a) Quyết định cuối:** Giữ nguyên kết luận **HOLD** (mã thoát 10) trung thực theo số liệu kiểm tra của pipeline (38/203 ảnh còn cảnh báo, tức 18.7% ≥ ngưỡng 10%).
 
-*(Thưởng +2, tùy chọn)* CVAT: lọc `width < 20`, ảnh/số box khớp, đối chiếu `BOX_TINY` (xem docs/CVAT_FILTER.md), 1 câu về `can_review`.
+Để chuyển thành **Release**:
+- Cần cấp thêm ngân sách cho người duyệt (`budget_images` trong `review`) từ 80 lên tối thiểu 125 ảnh để người duyệt xem xét hết 45 ảnh còn lại trong hàng đợi `05_review_queue.csv`.
+- Sau khi người duyệt xử lý dứt điểm các cảnh báo ngữ nghĩa nghi vấn (`POSSIBLE_MISSING`, `POSSIBLE_WRONG_CLASS`, `POSSIBLE_LOOSE_BOX`), số lượng ảnh còn cảnh báo sẽ giảm xuống dưới 20 ảnh (< 10%), khi đó cổng gate sẽ chuyển sang **Release** và cho phép phát hành chính thức.
+
+**(b) Ghi chú dùng AI:**
+1. **Prompt chính:** "Viết logic cho các module QC (`label_format`, `gate`, `autofix`, `second_opinion`) bám sát docstring và định dạng YOLO; dùng try/except bắt lỗi dòng hỏng, lấy ngưỡng từ cfg, không hardcode giá trị, tuân thủ TDD để pass toàn bộ test suite."
+2. **Cách kiểm code AI:** Chạy `pytest tests/test_<module>.py -q` theo từng bước TDD; kiểm tra mã sha1 các file gốc không bị sửa đổi (`scripts/_protected.json`); chạy `python -m pipeline.run` kiểm tra tính tái lập và đối chiếu trực tiếp các file output (`03_fixes.csv`, `07_error_list_v3.csv`).
+3. **1 lần AI sai:** Khi dùng lệnh PowerShell để cập nhật ngưỡng trong `configs/pipeline.yaml`, script PowerShell làm hỏng encoding UTF-8 (mất dấu tiếng Việt của các comment trong file), làm bẩn git diff toàn bộ file. Cách khắc phục: khôi phục file gốc từ git và dùng thao tác edit từng dòng chính xác để giữ nguyên encoding.
