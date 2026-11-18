@@ -64,7 +64,31 @@ Số liệu lấy từ `submission/calibration/calibration_report.md`. `POSSIBLE
 4. **Ảnh `EMPTY_LABEL`:** file nhãn rỗng được báo là cảnh báo (12 ảnh), nhưng máy không phân biệt được ảnh nền hợp lệ với ảnh bị thiếu nhãn.
 
 ## 5. Train: raw vs clean (tùy chọn, chấm riêng)
-Chưa chạy: Tập trung hoàn thiện phần lõi pipeline QC (4 module, calibration 2 ngưỡng, cổng gate kiểm soát chất lượng) trên môi trường cục bộ và kiểm tra tính tái lập. Sẽ chạy thí nghiệm so sánh đối đầu trên Google Colab theo [docs/COLAB.md](docs/COLAB.md) ở giai đoạn mở rộng nếu cần lấy thêm 15 điểm của phần train.
+Thí nghiệm huấn luyện đối đầu giữa dữ liệu gốc (`raw`) và dữ liệu sau pipeline (`clean`) được thực hiện trên Google Colab (GPU T4) với mô hình `yolo26n.pt`, 20 epochs, batch 16, imgsz 640 trên 2 seed (0 và 1). Tập đánh giá là `data/test` (100 ảnh chuẩn).
+
+Kết quả từ `submission/results/comparison.md`:
+
+| biến thể | #ảnh train | số seed | map50 (TB ± độ lệch) | map50_95 (TB ± độ lệch) | precision (TB ± độ lệch) | recall (TB ± độ lệch) |
+|---|---|---|---|---|---|---|
+| raw | 224 | 2 | 0.726 ± 0.000 | 0.512 ± 0.004 | 0.764 ± 0.061 | 0.649 ± 0.028 |
+| clean | 203 | 2 | 0.699 ± 0.025 | 0.486 ± 0.013 | 0.796 ± 0.050 | 0.596 ± 0.049 |
+
+Chênh mAP50 (clean − raw) = **-0.027** (-2.7%).
+
+**Phân tích và kết luận trung thực:**
+1. **So sánh chênh lệch với độ nhiễu giữa các seed:**
+   - Mức chênh lệch trung bình giữa `clean` và `raw` là -0.027. Tuy nhiên, độ lệch chuẩn giữa các seed của `clean` lên tới **± 0.025** (ở seed 0, `clean` đạt 0.6813; nhưng ở seed 1 vọt lên 0.7163, biến thiên 0.035).
+   - Vì khoảng chênh lệch nằm trọn trong biên độ nhiễu ngẫu nhiên giữa các lần khởi tạo seed, **chưa đủ bằng chứng thống kê** để kết luận tập dữ liệu nào cho mô hình tốt hơn nếu chỉ nhìn vào mAP50 tổng thể.
+2. **Precision vs Recall:**
+   - `clean` cho **Precision trung bình cao hơn** rõ rệt (0.796 ± 0.050 so với 0.764 ± 0.061 của `raw`), đặc biệt ở seed 0 đạt tới 0.8310. Điều này chứng minh việc dọn dẹp nhãn sai, lọc box tràn viền và bỏ ảnh hỏng giúp mô hình ít bị dự đoán sai/dự đoán nhầm hơn.
+   - Nhưng Recall của `clean` thấp hơn (0.596 so với 0.649), làm mAP50 trung bình bị giảm nhẹ.
+3. **Hai nguyên nhân chính giải thích kết quả:**
+   - **Giả thuyết 1: `raw` bị rò rỉ dữ liệu kiểm tra (`LEAK_TEST`) và có ảnh trùng.** Pipeline ở Bước 1 phát hiện `raw` chứa 5 ảnh rò rỉ từ tập test và 8 ảnh trùng lặp tuyệt đối. Mô hình `raw` đã được huấn luyện trên chính các ảnh có mặt trong tập test (data leakage), dẫn đến điểm số mAP của `raw` bị thổi phồng giả tạo (overestimated). *Cách kiểm:* Đánh giá lại cả hai mô hình trên một tập test hoàn toàn độc lập nằm ngoài bộ COCO hiện tại, hoặc loại bỏ 5 ảnh leak khỏi `raw` rồi train lại.
+   - **Giả thuyết 2: Số lượng ảnh train của `clean` bị giảm (203 vs 224 ảnh) và các lớp hiếm bị ảnh hưởng nặng.** `clean` bị loại 21 ảnh ở cửa vào. Với tập dữ liệu nhỏ (~200 ảnh), việc mất 21 ảnh làm giảm độ đa dạng của các lớp ít dữ liệu: cụ thể lớp `truck` (chỉ có 41 box) bị sụt giảm AP50 từ 0.6574 xuống 0.4841 (seed 0). Ngược lại, ở các lớp có nhiều dữ liệu hơn như `person` và `bus`, `clean` đều có AP50 cao hơn hoặc tương đương `raw` (ở seed 0: `person` tăng từ 0.8126 lên 0.8341, `bus` tăng từ 0.6811 lên 0.6972). *Cách kiểm:* Thu thập thêm dữ liệu bổ sung cho lớp hiếm (`truck`, `bus`) để bù lại số ảnh bị loại.
+4. **Kết luận trung thực & việc tiếp theo:**
+   - Không kết luận "clean tốt hơn raw" về mAP thô khi chưa có đủ số lượng seed lớn hơn (cần 5 seed để làm kiểm định t-test).
+   - Tuy nhiên, `clean` mang lại giá trị thực tế quan trọng: loại bỏ hoàn toàn nguy cơ rò rỉ dữ liệu test, tăng Precision dự đoán, và đảm bảo tính minh bạch cho quy trình ML.
+   - Bước tiếp theo: Bổ sung thêm ảnh cho các lớp hiếm (`truck`), tăng ngân sách duyệt người lên 125 ảnh để gỡ bỏ trạng thái Hold sang Release.
 
 ## 6. Quyết định và ghi chú AI
 **(a) Quyết định cuối:** Giữ nguyên kết luận **HOLD** (mã thoát 10) trung thực theo số liệu kiểm tra của pipeline (38/203 ảnh còn cảnh báo, tức 18.7% ≥ ngưỡng 10%).
