@@ -40,5 +40,64 @@ from ..model_cache import get_preds  # noqa: F401
 
 
 def run(ds, cfg, preds=None):
-    # TODO
-    raise NotImplementedError("check second_opinion chưa làm")
+    c = cfg["second_opinion"]
+    conf_min, min_area, fp_conf = c["conf"], c["min_area_px"], c["fp_conf"]
+    iou_missing, iou_match, iou_loose = c["iou_missing"], c["iou_match"], c["iou_loose"]
+    if preds is None:
+        preds = get_preds(ds, cfg, "checker")
+    n_classes = len(ds.classes)
+    issues = []
+
+    def warn(code, stem, msg, line=None, **extra):
+        issues.append(Issue("second_opinion", WARN, code, stem, msg, line=line, extra=extra))
+
+    for path in ds.image_files():
+        stem = path.stem
+        if stem not in preds:
+            continue
+        lines = ds.read_label_lines(stem)
+        if lines is None:                       # không có file nhãn: việc của check missing_labels
+            continue
+        size = ds.image_size(stem)
+        if not size:                            # ảnh hỏng: không tính được diện tích px
+            continue
+        W, H = size
+
+        # nhãn hợp lệ, giữ số dòng GỐC (valid_boxes không giữ số dòng)
+        labels = []                             # [(số dòng, (cid, cx, cy, w, h))]
+        for line_no, text in lines:
+            try:
+                b = parse_yolo_line(text)
+            except ValueError:
+                continue
+            if 0 <= b[0] < n_classes:
+                labels.append((line_no, b))
+
+        # --- model thấy vật mà nhãn thiếu / nhầm lớp / lỏng
+        for p in preds[stem]:
+            pcls, pconf, pcx, pcy, pw, ph = int(p[0]), p[1], p[2], p[3], p[4], p[5]
+            if pconf < conf_min or (pw * W) * (ph * H) < min_area:
+                continue
+            pbox = (pcx, pcy, pw, ph)
+            cands = [(iou_xywh(pbox, b[1:]), b[0]) for _, b in labels]
+            cands = [(iou, cid) for iou, cid in cands if iou >= iou_missing]
+            if not cands:
+                warn("POSSIBLE_MISSING", stem, f"model thấy lớp {pcls} (conf {pconf:.2f}) mà nhãn không có box", conf=pconf)
+                continue
+            same = [iou for iou, cid in cands if cid == pcls]
+            if same:
+                best = max(same)
+                if best < iou_loose:
+                    warn("POSSIBLE_LOOSE_BOX", stem, f"box lớp {pcls} khớp vật nhưng lỏng/lệch (IoU {best:.2f})", conf=pconf, iou=best)
+                continue                         # đã có nhãn đúng lớp phủ vật này
+            best_other = max(iou for iou, _ in cands)
+            if best_other >= iou_match:
+                warn("POSSIBLE_WRONG_CLASS", stem, f"model cho là lớp {pcls} (conf {pconf:.2f}), nhãn khác lớp (IoU {best_other:.2f})", conf=pconf, iou=best_other)
+            # IoU trong [iou_missing, iou_match) và khác lớp: mơ hồ -> không cờ
+
+        # --- box nhãn không khớp vật nào model thấy (dùng fp_conf, không lọc diện tích)
+        fp_boxes = [tuple(p[2:6]) for p in preds[stem] if p[1] >= fp_conf]
+        for line_no, b in labels:
+            if all(iou_xywh(b[1:], pb) < iou_missing for pb in fp_boxes):
+                warn("POSSIBLE_FALSE_POS", stem, f"box lớp {b[0]} không khớp vật nào model thấy", line=line_no)
+    return issues
