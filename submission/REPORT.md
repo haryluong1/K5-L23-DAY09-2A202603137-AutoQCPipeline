@@ -1,4 +1,4 @@
-# Báo cáo Day 09 — Lê Đức Lương, 2A202603137
+# Báo cáo Day 09 — Lê Đức Lượng, 2A202603137
 
 Báo cáo kết quả QC tự động trên lô 224 ảnh. Số liệu đối chiếu từ `submission/reports/`.
 
